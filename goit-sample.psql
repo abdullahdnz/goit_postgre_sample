@@ -29,15 +29,22 @@ ORDER BY ad_date;
 
 
 SELECT fabd.ad_date, fabd.campaign_id,
-	SUM(fabd.spend)::float / SUM(fabd.clicks) * 1000 AS cpc,
-	SUM(fabd.spend)::float / SUM(fabd.impressions) * 1000 AS cpm,
-	SUM(fabd.clicks)::float / SUM(fabd.impressions) * 100 AS ctr,
-	SUM(fabd.value)::float / SUM(fabd.spend) * 100 AS romi
+	ROUND(SUM(fabd.spend) / SUM(fabd.clicks)::numeric * 1000, 2) AS cpc,
+	ROUND(SUM(fabd.spend) / SUM(fabd.impressions)::numeric * 1000, 2) AS cpm,
+	ROUND(SUM(fabd.clicks) / SUM(fabd.impressions)::numeric * 100, 2) AS ctr,
+	ROUND(SUM(fabd.value) / SUM(fabd.spend) * 100, 2)::numeric AS romi
 FROM facebook_ads_basic_daily fabd
 --WHERE spend > 0 AND fabd.clicks > 0 AND fabd.impressions > 0
 GROUP BY ad_date, campaign_id
 HAVING SUM(fabd.spend) > 0 AND SUM(fabd.clicks) > 0 AND SUM(fabd.impressions) > 0
 ORDER BY ad_date;
 
+
+SELECT fabd.campaign_id, 
+	SUM(value)::float / SUM(fabd.spend) * 100 AS romi
+FROM facebook_ads_basic_daily fabd
+GROUP BY campaign_id
+HAVING SUM(spend) > 500000
+LIMIT 1;
 
 
