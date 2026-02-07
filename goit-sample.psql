@@ -1,0 +1,43 @@
+SELECT *
+FROM facebook_ads_basic_daily;
+
+SELECT DISTINCT adset_id, total
+FROM facebook_ads_basic_daily;
+
+SELECT ad_date,
+	spend,
+	clicks,
+	spend/clicks AS sc 
+FROM facebook_ads_basic_daily
+WHERE clicks > 0
+ORDER BY ad_date DESC;
+
+SELECT *
+FROM facebook_ads_basic_daily fabd;
+
+SELECT fabd.ad_date, fabd.campaign_id 
+FROM facebook_ads_basic_daily fabd; 
+
+SELECT fabd.ad_date, fabd.campaign_id,
+	SUM(fabd.spend) AS total_spend,
+	SUM(fabd.impressions) AS total_impression,
+	SUM(fabd.clicks) AS total_click,
+	SUM(fabd.value)	AS total_value
+FROM facebook_ads_basic_daily fabd
+GROUP BY ad_date, campaign_id  --Aynı tarih + kampanya kombinasyonundaki tüm kayıtlar tek satırda toplanır
+ORDER BY ad_date;
+
+
+SELECT fabd.ad_date, fabd.campaign_id,
+	SUM(fabd.spend)::float / SUM(fabd.clicks) * 1000 AS cpc,
+	SUM(fabd.spend)::float / SUM(fabd.impressions) * 1000 AS cpm,
+	SUM(fabd.clicks)::float / SUM(fabd.impressions) * 100 AS ctr,
+	SUM(fabd.value)::float / SUM(fabd.spend) * 100 AS romi
+FROM facebook_ads_basic_daily fabd
+--WHERE spend > 0 AND fabd.clicks > 0 AND fabd.impressions > 0
+GROUP BY ad_date, campaign_id
+HAVING SUM(fabd.spend) > 0 AND SUM(fabd.clicks) > 0 AND SUM(fabd.impressions) > 0
+ORDER BY ad_date;
+
+
+
