@@ -5,8 +5,8 @@ SELECT *
 FROM games_payments gp;
 
 
---1.Monthly Recurring Revenue (MRR) (Aylık Yinelenen Gelir) bir takvim ayına ait gelir miktarıdır; ancak bu gelir yalnızca aydan aya
- tekrar eden kaynaklardan elde edilmiştir.
+--1.Monthly Recurring Revenue (MRR) (Aylık Yinelenen Gelir) bir takvim ayına ait gelir miktarıdır; ancak bu gelir yalnızca aydan aya 
+tekrar eden kaynaklardan elde edilmiştir.
 
 SELECT 
     DATE_TRUNC('month', gp.payment_date::DATE) AS month,
@@ -54,17 +54,16 @@ ORDER BY month;
 
 WITH first_payment AS (
     SELECT gp.user_id,
-        MIN(gp.payment_date::DATE) AS first_payment_month
+    DATE_TRUNC('month', MIN(gp.payment_date::DATE)) AS first_payment_month
     FROM games_payments gp 
     GROUP BY gp.user_id
 )
 SELECT 
     DATE_TRUNC('month', fp.first_payment_month) AS MONTH,
-    SUM(gp.revenue_amount_usd) AS new_mrr,
-    COUNT(DISTINCT gp.user_id) AS new_paid_user
+    SUM(gp.revenue_amount_usd) AS new_mrr
 FROM games_payments gp 
 JOIN first_payment fp ON fp.user_id = gp.user_id 
-    AND gp.payment_date::DATE = first_payment_month 
+WHERE DATE_TRUNC('month', gp.payment_date) = fp.first_payment_month 
 GROUP BY MONTH
 ORDER BY MONTH;
 
@@ -88,12 +87,12 @@ is_churned AS(
         AND mp1.active_month = mp.active_month + INTERVAL '1 month'
 )
 SELECT 
-    (MONTH + INTERVAL '1 month') AS churn_month,
-    COUNT(user_id) FILTER (WHERE next_month_user IS NULL) AS churned_user_count
+    date_trunc('month', MONTH + INTERVAL '1 month') AS month_date,
+    TO_CHAR(date_trunc('month', MONTH + INTERVAL '1 month'), 'FMMonth YYYY') AS churn_month,
+    COUNT(user_id) FILTER (WHERE next_month_user IS NULL) AS churned_user_count 
 FROM is_churned 
-GROUP BY churn_month 
-ORDER BY churn_month;
-
+GROUP BY month_date
+ORDER BY month_date;
 
 --7.Churn Rate, hedef zaman dilimindeki Churned Kullanıcıların bir önceki dönemdeki Paid Kullanıcılara oranıdır. Örneğin, Churn Rate
  (Haziran) = Churned Users (Haziran) / Paid users (Mayıs)
@@ -114,12 +113,13 @@ monthly_values AS(
     GROUP BY mu."month"     
 )
 SELECT 
-    (month + INTERVAL '1 month') AS target_month,
+    date_trunc('month', MONTH + INTERVAL '1 month') AS month_date,
+    TO_CHAR(date_trunc('month', MONTH + INTERVAL '1 month'), 'FMMonth YYYY') AS target_month,
     churned_users AS churned_users_count,
     current_month AS previous_month_paid_users,
     ROUND((churned_users::DECIMAL / NULLIF(current_month, 0)) * 100, 2) AS churn_rate_percentage
 FROM monthly_values
-ORDER BY target_month;
+ORDER BY month_date;
 
 
 --8.Churned revenue – ödemeyi bırakan tüm kullanıcılardan elde edilen önceki döneme ait toplam gelir.
@@ -143,17 +143,18 @@ churn_revenue AS(
         AND urm1."month" = urm."month" + INTERVAL '1 month'
 )
 SELECT 
-    (active_month + INTERVAL '1 month') AS report_month,
+    date_trunc('month', active_month + INTERVAL '1 month') AS month_date,
+    TO_CHAR(date_trunc('month', active_month + INTERVAL '1 month'), 'FMMonth YYYY') AS target_month,
     ROUND(SUM(last_month_revenue), 2) AS churned_revenue
 FROM churn_revenue
 WHERE next_month_user IS NULL 
-GROUP BY report_month
-ORDER BY report_month;
+GROUP BY month_date
+ORDER BY month_date;
 
 
 
---9. Revenue Churn oranı, belirli bir takvim ayı için gelir elde edene kadar ödemeye devam etmeyen kullanıcıların bir önceki ay için
- elde ettikleri gelirin oranıdır. Örneğin, Revenue Churn Rate (Haziran) = Churned Revenue (Haziran) / MRR (Mayıs)
+--9. Revenue Churn oranı, belirli bir takvim ayı için gelir elde edene kadar ödemeye devam etmeyen kullanıcıların bir önceki ay için elde
+ ettikleri gelirin oranıdır. Örneğin, Revenue Churn Rate (Haziran) = Churned Revenue (Haziran) / MRR (Mayıs)
 
 WITH monthly_revenue AS(
     SELECT gp.user_id,
@@ -174,8 +175,8 @@ monthly_analysis AS(
     GROUP BY mr."month"
 )
 SELECT 
-    (month + INTERVAL '1 month') AS target_month,
-    ROUND(churned_revenue, 2) AS churned_revenue_amount,
+    date_trunc('month', month + INTERVAL '1 month') AS month_date,
+    TO_CHAR(date_trunc('month', month + INTERVAL '1 month'), 'FMMonth YYYY') AS target_month,
     ROUND((churned_revenue / NULLIF(total_mrr, 0)) * 100, 2) AS revenue_churn_rate_percentage
 FROM monthly_analysis
 ORDER BY target_month;
@@ -197,19 +198,20 @@ expansion AS(
         curr.user_id,
         curr.total_revenue AS current_revenue,
         prev.total_revenue AS prev_revenue,
-        (curr.total_revenue - prev.total_revenue) AS expansion
+        (curr.total_revenue - prev.total_revenue) AS expansion1
     FROM monthly_revenue curr
     JOIN monthly_revenue prev ON curr.user_id = prev.user_id
-        AND prev."month" = curr."month" + INTERVAL '1 month'
+        AND curr."month" = prev."month" + INTERVAL '1 month'
     WHERE curr.total_revenue > prev.total_revenue 
 )
 SELECT 
-    current_month AS month,
-    ROUND(SUM(expansion), 2) AS expansion_mr,
-    COUNT(DISTINCT user_id) AS expanded_user_count
+    date_trunc('month', current_month) AS month_date,
+    TO_CHAR(date_trunc('month', current_month), 'FMMonth YYYY') AS target_month,
+    ROUND(SUM(expansion1), 2) AS expansion_mr
 FROM expansion 
-GROUP BY "month" 
-ORDER BY "month";
+WHERE expansion1 > 0
+GROUP BY "month_date" 
+ORDER BY "month_date";
 
 
 --11.Küçülme MRR, MRRnin bir aydan diğerine azaldığı miktardır. İçinde bulunulan ayda daha az ödeme yapmaya başlayan kullanıcılar
@@ -228,19 +230,19 @@ contraction AS(
         curr.user_id,
         curr.total_revenue AS current_revenue,
         prev.total_revenue AS prev_revenue,
-        (prev.total_revenue - curr.total_revenue) AS contraction
+        (prev.total_revenue - curr.total_revenue) AS contraction1
     FROM monthly_revenue curr
     JOIN monthly_revenue prev ON curr.user_id = prev.user_id
-        AND prev."month" = curr."month" + INTERVAL '1 month'
-    WHERE curr.total_revenue < prev.total_revenue 
+        AND curr."month" = prev."month" + INTERVAL '1 month'
 )
 SELECT 
-    current_month AS month,
-    ROUND(SUM(contraction), 2) AS contraction_mr,
-    COUNT(DISTINCT user_id) AS contraction_user_count
+    date_trunc('month', current_month) AS month_date,
+    TO_CHAR(date_trunc('month', current_month), 'FMMonth YYYY') AS target_month,
+    -ROUND(SUM(contraction1), 2) AS contraction_mr
 FROM contraction 
-GROUP BY "month" 
-ORDER BY "month";
+WHERE contraction1 > 0
+GROUP BY "month_date" 
+ORDER BY "month_date";
 
 
 --12. Customer LifeTime (LT), ilk ödemeden kullanıcı kaybına kadar geçen ortalama süredir. Yani, ortalama bir kullanıcının ürünle
